@@ -5,28 +5,25 @@ from environs import Env
 
 
 def get_random_comic_number():
-    url_comics = 'https://xkcd.com/info.0.json'
-    response = requests.get(url_comics)
+    url_comic = 'https://xkcd.com/info.0.json'
+    response = requests.get(url_comic)
     response.raise_for_status()
-    comics_id = random.randint(1, response.json()['num'])
-    return comics_id
+    comic_id = random.randint(1, response.json()['num'])
+    return comic_id
 
 
-def download_random_image(comics_id):
-    url_comics = f'https://xkcd.com/{comics_id}/info.0.json'
-    response = requests.get(url_comics)
+def download_random_image(comic_id, filename):
+    url_comic = f'https://xkcd.com/{comic_id}/info.0.json'
+    response = requests.get(url_comic)
     response.raise_for_status()
     decoded_response = response.json()
-    comics_images = decoded_response['img']
+    comic_image = decoded_response['img']
     message = decoded_response['alt']
-    return comics_images, message
-
-
-def download_images(filename, comics_images):
-    response = requests.get(comics_images)
-    response.raise_for_status()
+    comic_response = requests.get(comic_image)
+    comic_response.raise_for_status()
     with open(filename, 'wb') as file:
-        file.write(response.content)
+        file.write(comic_response.content)
+    return message
 
 
 def get_upload_server_url(group_id, token, api_version):
@@ -38,22 +35,22 @@ def get_upload_server_url(group_id, token, api_version):
     url = 'https://api.vk.com/method/photos.getWallUploadServer'
     response = requests.get(url, params=params)
     response.raise_for_status()
-    decoded_response = response.json()
+    decoded_response = raise_if_vk_error(response)
     return decoded_response['response']['upload_url']
 
 
-def send_photo(url, filename):
+def upload_photo(url, filename):
     with open(filename, 'rb') as file:
         files = {
             'photo': file,
         }
         response = requests.post(url, files=files)
-        response.raise_for_status()
-        decoded_response = response.json()
-        photo_param = decoded_response['photo']
-        server_param = decoded_response['server']
-        hash_param = decoded_response['hash']
-        return photo_param, server_param, hash_param
+    response.raise_for_status()
+    decoded_response = raise_if_vk_error(response)
+    photo_param = decoded_response['photo']
+    server_param = decoded_response['server']
+    hash_param = decoded_response['hash']
+    return photo_param, server_param, hash_param
 
 
 def save_photo(group_id, token, photo_param, server_param, hash_param, api_version):
@@ -67,13 +64,13 @@ def save_photo(group_id, token, photo_param, server_param, hash_param, api_versi
               }
     response = requests.post(url, params=params)
     response.raise_for_status()
-    decoded_response = response.json()
+    decoded_response = raise_if_vk_error(response)
     owner_id = decoded_response['response'][0]['owner_id']
     media_id = decoded_response['response'][0]['id']
     return owner_id, media_id
 
 
-def post_comics(owner_id, media_id, group_id, token, message, api_version):
+def post_comic(owner_id, media_id, group_id, token, message, api_version):
     url = 'https://api.vk.com/method/wall.post'
     attachments = f'photo{owner_id}_{media_id}'
     params = {'owner_id': f'-{group_id}',
@@ -85,6 +82,23 @@ def post_comics(owner_id, media_id, group_id, token, message, api_version):
               }
     response = requests.post(url, params=params)
     response.raise_for_status()
+    raise_if_vk_error(response)
+
+
+class VKError(Exception):
+    def __init__(self, response_data):
+        self.error_msg = response_data['error']['error_msg']
+
+    def __str__(self):
+        return self.error_msg
+
+
+def raise_if_vk_error(response):
+    vk_response_data = response.json()
+    if vk_response_data.get('error'):
+        raise VKError(vk_response_data)
+
+    return vk_response_data
 
 
 def main():
@@ -94,14 +108,15 @@ def main():
     token = env.str("VK_TOKEN")
     group_id = env.str("VK_GROUP_ID")
     filename = "comic.png"
-    comics_id = get_random_comic_number()
-    comics_images, message = download_random_image(comics_id)
-    download_images(filename, comics_images)
-    upload_server_url = get_upload_server_url(group_id, token, api_version)
-    photo_param, server_param, hash_param = send_photo(upload_server_url, filename)
-    owner_id, media_id = save_photo(group_id, token, photo_param, server_param, hash_param, api_version)
-    post_comics(owner_id, media_id, group_id, token, message, api_version)
-    os.remove(filename)
+    try:
+        comic_id = get_random_comic_number()
+        message = download_random_image(comic_id,filename)
+        upload_server_url = get_upload_server_url(group_id, token, api_version)
+        photo_param, server_param, hash_param = upload_photo(upload_server_url, filename)
+        owner_id, media_id = save_photo(group_id, token, photo_param, server_param, hash_param, api_version)
+        post_comic(owner_id, media_id, group_id, token, message, api_version)
+    finally:
+        os.remove(filename)
 
 
 if __name__ == '__main__':
