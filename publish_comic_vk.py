@@ -5,16 +5,16 @@ from environs import Env
 
 
 def get_random_comic_number():
-    url_comic = 'https://xkcd.com/info.0.json'
-    response = requests.get(url_comic)
+    comic_url = 'https://xkcd.com/info.0.json'
+    response = requests.get(comic_url)
     response.raise_for_status()
     comic_id = random.randint(1, response.json()['num'])
     return comic_id
 
 
 def download_random_image(comic_id, filename):
-    url_comic = f'https://xkcd.com/{comic_id}/info.0.json'
-    response = requests.get(url_comic)
+    comic_url = f'https://xkcd.com/{comic_id}/info.0.json'
+    response = requests.get(comic_url)
     response.raise_for_status()
     decoded_response = response.json()
     comic_image = decoded_response['img']
@@ -35,7 +35,8 @@ def get_upload_server_url(group_id, token, api_version):
     url = 'https://api.vk.com/method/photos.getWallUploadServer'
     response = requests.get(url, params=params)
     response.raise_for_status()
-    decoded_response = raise_if_vk_error(response)
+    raise_if_vk_error(response)
+    decoded_response = response.json()
     return decoded_response['response']['upload_url']
 
 
@@ -46,7 +47,8 @@ def upload_photo(url, filename):
         }
         response = requests.post(url, files=files)
     response.raise_for_status()
-    decoded_response = raise_if_vk_error(response)
+    raise_if_vk_error(response)
+    decoded_response = response.json()
     photo_param = decoded_response['photo']
     server_param = decoded_response['server']
     hash_param = decoded_response['hash']
@@ -64,7 +66,8 @@ def save_photo(group_id, token, photo_param, server_param, hash_param, api_versi
               }
     response = requests.post(url, params=params)
     response.raise_for_status()
-    decoded_response = raise_if_vk_error(response)
+    raise_if_vk_error(response)
+    decoded_response = response.json()
     owner_id = decoded_response['response'][0]['owner_id']
     media_id = decoded_response['response'][0]['id']
     return owner_id, media_id
@@ -86,19 +89,18 @@ def post_comic(owner_id, media_id, group_id, token, message, api_version):
 
 
 class VKError(Exception):
-    def __init__(self, response_data):
-        self.error_msg = response_data['error']['error_msg']
+    def __init__(self, decoded_response):
+        self.error_msg = decoded_response['error']['error_msg']
 
     def __str__(self):
         return self.error_msg
 
 
 def raise_if_vk_error(response):
-    vk_response_data = response.json()
-    if vk_response_data.get('error'):
-        raise VKError(vk_response_data)
+    vk_decoded_response = response.json()
+    if vk_decoded_response.get('error'):
+        raise VKError(vk_decoded_response)
 
-    return vk_response_data
 
 
 def main():
